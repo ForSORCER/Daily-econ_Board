@@ -1,135 +1,227 @@
+
 import json
 import os
-import sys
-from datetime import datetime, timezone
-from pathlib import Path
-from urllib.request import Request, urlopen
-from urllib.error import HTTPError, URLError
+import urllib.request
+import urllib.error
+from urllib.parse import quote
+from datetime import datetime, timezone, timedelta
+
 
 API_KEY = os.environ.get("ECOS_API_KEY")
-BASE_URL = "https://ecos.bok.or.kr/api/"
+
+BASE_URL = "https://ecos.bok.or.kr/api"
+
+KST = timezone(timedelta(hours=9))
+
+OUTPUT_FILE = "data/economy_catalog.json"
 
 
-class EcosError(Exception):
+class EcosNoData(Exception):
     pass
 
 
-def ecos_request(service, *parts):
-    path = "/".join(
-        [service, API_KEY, "json", "kr"] + [str(p) for p in parts]
+def ecos_request(service, start, end, stat_code=None):
+    """ECOS API 요청"""
+
+    if not API_KEY:
+        raise RuntimeError("ECOS_API_KEY 환경변수를 찾을 수 없습니다.")
+
+    url = (
+        f"{BASE_URL}/{service}/{quote(API_KEY, safe='')}"
+        f"/json/kr/{start}/{end}"
     )
-    request = Request(
-        BASE_URL + path,
-        headers={"User-Agent": "Daily-Econ-Board/1.0"}
+
+    if stat_code:
+        url += f"/{quote(str(stat_code), safe='')}"
+
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "DailyEconomicBoard/1.0"}
     )
 
     try:
-        with urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=30) as response:
             result = json.loads(response.read().decode("utf-8"))
 
-    except HTTPError as e:
-        raise EcosError(f"HTTP 오류: {e.code}") from None
-    except URLError:
-        raise EcosError("ECOS 서버에 연결하지 못했습니다.") from None
-    except Exception:
-        raise EcosError("ECOS 응답을 읽지 못했습니다.") from None
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(
+            f"ECOS HTTP 오류: {error.code}"
+        )
 
-    if "RESULT" in result:
-        error = result["RESULT"]
-        code = error.get("CODE", "알 수 없음")
-        message = error.get("MESSAGE", "상세 메시지 없음")
-        raise EcosError(f"ECOS 오류 {code}: {message}")
+    except urllib.error.URLError as error:
+        raise RuntimeError(
+            f"ECOS 연결 오류: {error.reason}"
+        )
 
-    service_data = result.get(service)
+    # ECOS 오류 응답 확인
+    result_info = result.get("RESULT", {})
 
-    if not isinstance(service_data, dict):
-        raise EcosError(f"{service}: 예상하지 못한 응답 형식")
+    if result_info:
+        code = result_info.get("CODE", "")
+        message = result_info.get("MESSAGE", "")
 
-    return service_data.get("row", [])
+        if code == "INFO-200":
+            raise EcosNoData(message)
+
+        if code and code != "INFO-000":
+            raise RuntimeError(
+                f"ECOS 오류 {code}: {message}"
+            )
+
+    # 서비스별 데이터 추출
+    service_data = result.get(service, {})
+
+    if not service_data:
+        return []
+
+    rows = service_data.get("row", [])
+
+    if isinstance(rows, dict):
+        rows = [rows]
+
+    return rows or []
 
 
 def main():
-    if not API_KEY:
-        raise EcosError("ECOS_API_KEY Secret을 찾을 수 없습니다.")
 
-    print("1. ECOS 통계 목록을 확인합니다.")
+    print("ECOS 통계 목록을 확인합니다.")
 
-    tables = ecos_request("StatisticTableList", 1, 1000)
+    # 전체 통계표 목록
+    tables = ecos_request(
+        "StatisticTableList",
+        1,
+        1000
+    )
+
     print("통계표 수:", len(tables))
 
-    candidates = []
+    # 실제 검색 가능한 통계표만 선택
+    searchable_tables = [
+        table for table in tables
+        if str(table.get("SRCH_YN", "")).upper() == "Y"
+    ]
 
-    for table in tables:
+    print(
+        "검색 가능한 통계표 수:",
+        len(searchable_tables)
+    )
+
+    # 기준금리 및 환율 관련 통계표 검색
+    targets = {
+        "기준금리": ["기준금리", "여수신금리"],
+        "환율": ["환율", "외환"]
+    }
+
+    selected_tables = {
+        "기준금리": [],
+        "환율": []
+    }
+
+    selected_items = {
+        "기준금리": [],
+        "환율": []
+    }
+
+    for table in searchable_tables:
+
         table_name = table.get("STAT_NAME", "")
         table_code = table.get("STAT_CODE", "")
 
         if not table_code:
             continue
 
-        if "환율" in table_name or "기준금리" in table_name:
+        for category, keywords in targets.items():
+
+            if not any(
+                keyword in table_name
+                for keyword in keywords
+            ):
+                continue
+
+            print()
             print("통계표 발견:", table_name)
+            print("통계표 코드:", table_code)
+
+            selected_tables[category].append({
+                "stat_code": table_code,
+                "stat_name": table_name,
+                "cycle": table.get("CYCLE", "")
+            })
 
             print("세부 항목을 확인합니다:", table_name)
 
-            items = ecos_request(
-                "StatisticItemList", 1, 1000, table_code
-            )
-
-            print("세부 항목 수:", len(items))
-
-            for item in items:
-                item_name = item.get("ITEM_NAME", "")
-                item_code = item.get("ITEM_CODE", "")
-
-                if not item_code:
-                    continue
-
-                is_exchange = (
-                    "환율" in table_name
-                    and ("미국달러" in item_name or "미국 달러" in item_name)
+            try:
+                items = ecos_request(
+                    "StatisticItemList",
+                    1,
+                    1000,
+                    table_code
                 )
 
-                is_rate = (
-                    "기준금리" in table_name
-                    and "기준금리" in item_name
-                )
+                print("세부 항목 수:", len(items))
 
-                if is_exchange or is_rate:
-                    candidates.append({
-                        "table_name": table_name,
-                        "table_code": table_code,
-                        "item_name": item_name,
-                        "item_code": item_code,
+                for item in items:
+
+                    selected_items[category].append({
+                        "stat_code": table_code,
+                        "stat_name": table_name,
                         "cycle": item.get("CYCLE", ""),
+                        "item_code": item.get("ITEM_CODE", ""),
+                        "item_name": item.get("ITEM_NAME", ""),
+                        "unit_name": item.get("UNIT_NAME", ""),
                         "start_time": item.get("START_TIME", ""),
-                        "end_time": item.get("END_TIME", ""),
-                        "unit": item.get("UNIT_NAME", "")
+                        "end_time": item.get("END_TIME", "")
                     })
 
+            except EcosNoData:
+                print(
+                    "세부 항목 없음. 다음 통계표로 넘어갑니다."
+                )
+                continue
+
+    # 결과 저장
     output = {
+        "updated_at": datetime.now(KST).isoformat(),
         "source": "한국은행 ECOS",
-        "checked_at": datetime.now(timezone.utc).isoformat(),
-        "candidates": candidates
+        "tables": selected_tables,
+        "items": selected_items
     }
 
-    output_path = Path("data/economy_catalog.json")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        json.dumps(output, ensure_ascii=False, indent=2),
-        encoding="utf-8"
-    )
+    os.makedirs("data", exist_ok=True)
 
-    print("통계 항목 확인 완료.")
-    print("후보 항목 수:", len(candidates))
-    print("결과 파일:", str(output_path))
+    with open(
+        OUTPUT_FILE,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(
+            output,
+            file,
+            ensure_ascii=False,
+            indent=2
+        )
+
+    print()
+    print("수집 작업 완료")
+    print(
+        "기준금리 통계표:",
+        len(selected_tables["기준금리"])
+    )
+    print(
+        "환율 통계표:",
+        len(selected_tables["환율"])
+    )
+    print(
+        "기준금리 세부 항목:",
+        len(selected_items["기준금리"])
+    )
+    print(
+        "환율 세부 항목:",
+        len(selected_items["환율"])
+    )
+    print("저장 위치:", OUTPUT_FILE)
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except EcosError as e:
-        print("ECOS 수집 오류:", str(e))
-        sys.exit(1)
-    except Exception as e:
-        print("예상하지 못한 프로그램 오류:", type(e).__name__)
-        sys.exit(1)
+    main()
