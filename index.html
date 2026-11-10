@@ -67,7 +67,6 @@ h1 { font-size: 27px; letter-spacing: 1px; margin-bottom: 8px; }
 .chart { width: 100%; margin-top: 20px; }
 .chart svg { width: 100%; height: 220px; overflow: visible; }
 .chart-line { fill: none; stroke: #62c5a1; stroke-width: 3; }
-.chart-dot { fill: #62c5a1; }
 .chart-labels {
   display: flex;
   justify-content: space-between;
@@ -145,30 +144,57 @@ placeholders.forEach(letter => {
   document.getElementById("cardGrid").appendChild(card);
 });
 
+function getSorted(list) {
+  return Array.isArray(list)
+    ? [...list].sort((a, b) =>
+        String(a.time).localeCompare(String(b.time))
+      )
+    : [];
+}
+
 function getLatest(list) {
-  if (!Array.isArray(list) || list.length === 0) return null;
-  return [...list].sort((a, b) =>
-    String(a.time).localeCompare(String(b.time))
-  ).at(-1);
+  const sorted = getSorted(list);
+  return sorted.length ? sorted[sorted.length - 1] : null;
 }
 
 function formatValue(item, category) {
   if (!item || item.value === undefined || item.value === null) {
     return "데이터 준비 중";
   }
+
   const number = Number(String(item.value).replace(/,/g, ""));
   if (!Number.isFinite(number)) return item.value;
-  const formatted = number.toLocaleString("ko-KR", {
-    maximumFractionDigits: 4
-  });
-  return category === "환율"
-    ? formatted + " 원"
-    : formatted + (item.unit ? " " + item.unit : "%");
+
+  if (category === "환율") {
+    return Math.round(number).toLocaleString("ko-KR") + "원";
+  }
+
+  return number.toLocaleString("ko-KR", {
+    maximumFractionDigits: 2
+  }) + "%";
+}
+
+function formatDate(time, category) {
+  const value = String(time || "");
+
+  if (category === "기준금리" && /^\d{6}$/.test(value)) {
+    return value.substring(0, 4) + "년 " +
+      Number(value.substring(4, 6)) + "월";
+  }
+
+  if (category === "환율" && /^\d{8}$/.test(value)) {
+    return value.substring(0, 4) + "-" +
+      value.substring(4, 6) + "-" +
+      value.substring(6, 8);
+  }
+
+  return value;
 }
 
 function displayMain(category) {
   const list = economyData.observations?.[category] || [];
   const latest = getLatest(list);
+
   const valueElement = document.getElementById(category + "Value");
   const dateElement = document.getElementById(category + "Date");
 
@@ -179,13 +205,20 @@ function displayMain(category) {
   }
 
   valueElement.textContent = formatValue(latest, category);
-  dateElement.textContent = "기준일: " + latest.time;
+  dateElement.textContent =
+    "기준일: " + formatDate(latest.time, category);
 }
 
 async function loadData() {
   try {
-    const response = await fetch("./data/economy_catalog.json? t=" + Date.now());
-    if (!response.ok) throw new Error("데이터 파일을 불러오지 못했습니다.");
+    const response = await fetch(
+      "./data/economy_catalog.json?t=" + Date.now(),
+      { cache: "no-store" }
+    );
+
+    if (!response.ok) {
+      throw new Error("데이터 파일을 불러오지 못했습니다.");
+    }
 
     economyData = await response.json();
 
@@ -193,22 +226,24 @@ async function loadData() {
     displayMain("기준금리");
 
     document.getElementById("updateTime").textContent =
-      "데이터 수집 시각: " + (economyData.updated_at || "확인 중");
+      "데이터 수집 시각: " +
+      (economyData.updated_at || "확인 중");
+
   } catch (error) {
     document.getElementById("환율Value").textContent = "데이터 준비 중";
     document.getElementById("기준금리Value").textContent = "데이터 준비 중";
     document.getElementById("updateTime").textContent =
-      "데이터를 불러오지 못했습니다. 잠시 후 다시 확인해 주세요.";
+      "데이터를 불러오지 못했습니다.";
     console.error(error);
   }
 }
 
 function showDetail(category) {
-  const list = economyData.observations?.[category] || [];
-  const sorted = [...list].sort((a, b) =>
-    String(a.time).localeCompare(String(b.time))
+  const list = getSorted(
+    economyData.observations?.[category] || []
   );
-  const latest = sorted[sorted.length - 1];
+
+  const latest = getLatest(list);
 
   document.getElementById("detailPanel").style.display = "block";
   document.getElementById("detailTitle").textContent =
@@ -218,10 +253,18 @@ function showDetail(category) {
     latest ? formatValue(latest, category) : "데이터 준비 중";
 
   document.getElementById("detailDate").textContent =
-    latest ? "최근 관측 기준일: " + latest.time : "";
+    latest
+      ? "최근 관측 기준일: " + formatDate(latest.time, category)
+      : "";
 
-  drawChart(sorted);
-  drawDataList(sorted);
+  // 기준금리는 최근 6개월만 표시
+  const displayList = category === "기준금리"
+    ? list.slice(-6)
+    : list.slice(-60);
+
+  drawChart(displayList);
+  drawDataList(displayList, category);
+
   document.getElementById("detailPanel").scrollIntoView({
     behavior: "smooth",
     block: "start"
@@ -230,17 +273,19 @@ function showDetail(category) {
 
 function drawChart(list) {
   const area = document.getElementById("chartArea");
+
   const valid = list.map(item => ({
     time: item.time,
     value: Number(String(item.value).replace(/,/g, ""))
   })).filter(item => Number.isFinite(item.value));
 
   if (valid.length < 2) {
-    area.innerHTML = '<div class="notice">그래프를 표시할 데이터가 부족합니다.</div>';
+    area.innerHTML =
+      '<div class="notice">그래프를 표시할 데이터가 부족합니다.</div>';
     return;
   }
 
-  const points = valid.slice(-60);
+  const points = valid;
   const values = points.map(p => p.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -264,16 +309,15 @@ function drawChart(list) {
   `;
 }
 
-function drawDataList(list) {
+function drawDataList(list, category) {
   const area = document.getElementById("dataList");
-  const recent = [...list].sort((a, b) =>
-    String(b.time).localeCompare(String(a.time))
-  ).slice(0, 10);
+
+  const recent = [...list].reverse();
 
   area.innerHTML = recent.map(item => `
     <div class="data-row">
-      <span>${item.time}</span>
-      <strong>${item.value} ${item.unit || ""}</strong>
+      <span>${formatDate(item.time, category)}</span>
+      <strong>${formatValue(item, category)}</strong>
     </div>
   `).join("");
 }
