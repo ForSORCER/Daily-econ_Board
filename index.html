@@ -4,166 +4,285 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#101827">
-<title>Daily Econ Board</title>
+<title>DAILY ECON BOARD</title>
 <style>
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  background: #101827;
-  color: #f1f5f9;
+  padding: 24px;
+  background: #101820;
+  color: #edf2f7;
   font-family: Arial, sans-serif;
 }
-header {
-  padding: 25px 20px;
-  border-bottom: 1px solid #334155;
-}
-header h1 { margin: 0; font-size: 23px; }
-header p { color: #94a3b8; font-size: 13px; }
-main { max-width: 900px; margin: auto; padding: 20px; }
-.notice {
-  background: #332b1b;
-  color: #facc15;
-  padding: 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  margin-bottom: 20px;
-}
-h2 { font-size: 17px; margin: 25px 0 14px; }
+.container { max-width: 1050px; margin: auto; }
+header { margin-bottom: 30px; }
+h1 { font-size: 27px; letter-spacing: 1px; margin-bottom: 8px; }
+.subtitle { color: #9aa8b5; font-size: 13px; }
+.update { color: #8d9ba8; font-size: 12px; margin-top: 12px; }
 .grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 .card {
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: #1b2935;
+  border: 1px solid #30404d;
   border-radius: 12px;
-  padding: 17px;
+  padding: 22px;
+  min-height: 145px;
   cursor: pointer;
+  transition: 0.2s;
 }
-.card:active { background: #334155; }
-.name { color: #94a3b8; font-size: 13px; }
-.value { font-size: 23px; font-weight: bold; margin-top: 12px; }
-.unit { color: #94a3b8; font-size: 12px; }
+.card:hover { border-color: #64b99a; transform: translateY(-2px); }
+.card.placeholder {
+  background: #18232d;
+  border-style: dashed;
+  cursor: default;
+  opacity: 0.65;
+}
+.card.placeholder:hover { transform: none; border-color: #30404d; }
+.card-title { color: #aab8c4; font-size: 14px; }
+.card-value { font-size: 27px; font-weight: bold; margin-top: 20px; }
+.card-date { color: #81909d; font-size: 12px; margin-top: 9px; }
 .detail {
   display: none;
-  background: #1e293b;
-  padding: 20px;
+  margin-top: 24px;
+  padding: 24px;
+  background: #1b2935;
+  border: 1px solid #30404d;
   border-radius: 12px;
-  margin-top: 20px;
-  border: 1px solid #475569;
 }
-.detail button {
-  background: #334155;
+.detail h2 { margin-top: 0; }
+.close {
+  float: right;
+  background: #30404d;
   color: white;
   border: 0;
-  padding: 9px 14px;
-  border-radius: 7px;
+  padding: 8px 13px;
+  border-radius: 6px;
   cursor: pointer;
 }
-footer {
-  color: #64748b;
-  text-align: center;
-  padding: 30px 10px;
-  font-size: 12px;
+.detail-value { font-size: 30px; font-weight: bold; margin: 20px 0 5px; }
+.detail-date { color: #9aa8b5; font-size: 13px; }
+.chart { width: 100%; margin-top: 20px; }
+.chart svg { width: 100%; height: 220px; overflow: visible; }
+.chart-line { fill: none; stroke: #62c5a1; stroke-width: 3; }
+.chart-dot { fill: #62c5a1; }
+.chart-labels {
+  display: flex;
+  justify-content: space-between;
+  color: #8d9ba8;
+  font-size: 11px;
 }
-@media (min-width: 650px) {
-  .grid { grid-template-columns: repeat(4, 1fr); }
+.data-list { margin-top: 20px; }
+.data-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid #30404d;
+  font-size: 13px;
+}
+.notice { color: #9aa8b5; font-size: 13px; margin-top: 18px; }
+footer { color: #71808d; font-size: 11px; margin-top: 30px; }
+@media (max-width: 600px) {
+  body { padding: 16px; }
+  h1 { font-size: 23px; }
+  .card { padding: 17px; min-height: 130px; }
+  .card-value { font-size: 22px; }
+  .detail { padding: 17px; }
 }
 </style>
 </head>
 <body>
+<div class="container">
+  <header>
+    <h1>DAILY ECON BOARD</h1>
+    <div class="subtitle">주요 경제지표 한눈에 보기</div>
+    <div class="update" id="updateTime">데이터 확인 중...</div>
+  </header>
 
-<header>
-  <h1>DAILY ECON BOARD</h1>
-  <p>MY DAILY MACRO INDICATORS</p>
-</header>
-
-<main>
-  <div class="notice">
-    현재는 화면 테스트용 예시 데이터입니다.
-    실제 경제지표와 연동된 수치가 아닙니다.
-  </div>
-
-  <h2>주요 경제지표</h2>
-
-  <div class="grid">
-    <div class="card" onclick="showDetail('USD/KRW','달러 / 원 환율','예시: 1,400.00 원')">
-      <div class="name">USD / KRW</div>
-      <div class="value">1,400.00</div>
-      <div class="unit">원 · 예시</div>
+  <main class="grid" id="cardGrid">
+    <div class="card" onclick="showDetail('환율')">
+      <div class="card-title">USD/KRW</div>
+      <div class="card-value" id="환율Value">불러오는 중...</div>
+      <div class="card-date" id="환율Date">ECOS 데이터</div>
     </div>
 
-    <div class="card" onclick="showDetail('JPY/KRW','100엔 / 원 환율','예시: 950.00 원')">
-      <div class="name">JPY / KRW</div>
-      <div class="value">950.00</div>
-      <div class="unit">100엔당 원 · 예시</div>
+    <div class="card" onclick="showDetail('기준금리')">
+      <div class="card-title">한국 기준금리</div>
+      <div class="card-value" id="기준금리Value">불러오는 중...</div>
+      <div class="card-date" id="기준금리Date">ECOS 데이터</div>
     </div>
+  </main>
 
-    <div class="card" onclick="showDetail('한국 기준금리','한국은행 기준금리','예시: 2.50%')">
-      <div class="name">한국 기준금리</div>
-      <div class="value">2.50%</div>
-      <div class="unit">예시</div>
-    </div>
+  <section class="detail" id="detailPanel">
+    <button class="close" onclick="closeDetail()">닫기</button>
+    <h2 id="detailTitle">상세정보</h2>
+    <div class="detail-value" id="detailValue">--</div>
+    <div class="detail-date" id="detailDate"></div>
+    <div class="chart" id="chartArea"></div>
+    <div class="data-list" id="dataList"></div>
+    <div class="notice">자료 출처: 한국은행 ECOS</div>
+  </section>
 
-    <div class="card" onclick="showDetail('미국 기준금리','미국 정책금리','예시: 4.00%')">
-      <div class="name">미국 기준금리</div>
-      <div class="value">4.00%</div>
-      <div class="unit">예시</div>
-    </div>
-
-    <div class="card" onclick="showDetail('한국 국채 10년','한국 10년 만기 국채금리','예시: 3.20%')">
-      <div class="name">한국 국채 10년</div>
-      <div class="value">3.20%</div>
-      <div class="unit">예시</div>
-    </div>
-
-    <div class="card" onclick="showDetail('미국 국채 10년','미국 10년 만기 국채금리','예시: 4.10%')">
-      <div class="name">미국 국채 10년</div>
-      <div class="value">4.10%</div>
-      <div class="unit">예시</div>
-    </div>
-
-    <div class="card" onclick="showDetail('KOSPI','한국 종합주가지수','예시: 2,800.00')">
-      <div class="name">KOSPI</div>
-      <div class="value">2,800</div>
-      <div class="unit">포인트 · 예시</div>
-    </div>
-
-    <div class="card" onclick="showDetail('EUR/KRW','유로 / 원 환율','예시: 1,500.00 원')">
-      <div class="name">EUR / KRW</div>
-      <div class="value">1,500.00</div>
-      <div class="unit">원 · 예시</div>
-    </div>
-  </div>
-
-  <div class="detail" id="detail">
-    <button onclick="closeDetail()">닫기</button>
-    <h2 id="detailTitle"></h2>
-    <p id="detailDescription"></p>
-    <p style="color:#94a3b8;font-size:13px;">
-      실제 데이터 및 그래프는 다음 개발 단계에서 연결할 예정입니다.
-    </p>
-  </div>
-</main>
-
-<footer>
-  DAILY ECON BOARD · PERSONAL ECONOMIC DASHBOARD
-</footer>
+  <footer>
+    본 화면은 한국은행 ECOS 공개 통계를 이용합니다.
+  </footer>
+</div>
 
 <script>
-function showDetail(title, description, value) {
-  document.getElementById('detailTitle').textContent = title;
-  document.getElementById('detailDescription').textContent =
-    description + ' · ' + value;
-  document.getElementById('detail').style.display = 'block';
-  document.getElementById('detail').scrollIntoView({behavior:'smooth'});
-}
-function closeDetail() {
-  document.getElementById('detail').style.display = 'none';
-}
-</script>
+let economyData = {};
 
+const placeholders = ["A", "B", "C", "D", "E", "F"];
+placeholders.forEach(letter => {
+  const card = document.createElement("div");
+  card.className = "card placeholder";
+  card.innerHTML = `
+    <div class="card-title">항목 ${letter}</div>
+    <div class="card-value">--</div>
+    <div class="card-date">추후 추가 예정</div>
+  `;
+  document.getElementById("cardGrid").appendChild(card);
+});
+
+function getLatest(list) {
+  if (!Array.isArray(list) || list.length === 0) return null;
+  return [...list].sort((a, b) =>
+    String(a.time).localeCompare(String(b.time))
+  ).at(-1);
+}
+
+function formatValue(item, category) {
+  if (!item || item.value === undefined || item.value === null) {
+    return "데이터 준비 중";
+  }
+  const number = Number(String(item.value).replace(/,/g, ""));
+  if (!Number.isFinite(number)) return item.value;
+  const formatted = number.toLocaleString("ko-KR", {
+    maximumFractionDigits: 4
+  });
+  return category === "환율"
+    ? formatted + " 원"
+    : formatted + (item.unit ? " " + item.unit : "%");
+}
+
+function displayMain(category) {
+  const list = economyData.observations?.[category] || [];
+  const latest = getLatest(list);
+  const valueElement = document.getElementById(category + "Value");
+  const dateElement = document.getElementById(category + "Date");
+
+  if (!latest) {
+    valueElement.textContent = "데이터 준비 중";
+    dateElement.textContent = "관측값을 찾을 수 없습니다";
+    return;
+  }
+
+  valueElement.textContent = formatValue(latest, category);
+  dateElement.textContent = "기준일: " + latest.time;
+}
+
+async function loadData() {
+  try {
+    const response = await fetch("./data/economy_catalog.json? t=" + Date.now());
+    if (!response.ok) throw new Error("데이터 파일을 불러오지 못했습니다.");
+
+    economyData = await response.json();
+
+    displayMain("환율");
+    displayMain("기준금리");
+
+    document.getElementById("updateTime").textContent =
+      "데이터 수집 시각: " + (economyData.updated_at || "확인 중");
+  } catch (error) {
+    document.getElementById("환율Value").textContent = "데이터 준비 중";
+    document.getElementById("기준금리Value").textContent = "데이터 준비 중";
+    document.getElementById("updateTime").textContent =
+      "데이터를 불러오지 못했습니다. 잠시 후 다시 확인해 주세요.";
+    console.error(error);
+  }
+}
+
+function showDetail(category) {
+  const list = economyData.observations?.[category] || [];
+  const sorted = [...list].sort((a, b) =>
+    String(a.time).localeCompare(String(b.time))
+  );
+  const latest = sorted[sorted.length - 1];
+
+  document.getElementById("detailPanel").style.display = "block";
+  document.getElementById("detailTitle").textContent =
+    category === "환율" ? "USD/KRW 환율" : "한국 기준금리";
+
+  document.getElementById("detailValue").textContent =
+    latest ? formatValue(latest, category) : "데이터 준비 중";
+
+  document.getElementById("detailDate").textContent =
+    latest ? "최근 관측 기준일: " + latest.time : "";
+
+  drawChart(sorted);
+  drawDataList(sorted);
+  document.getElementById("detailPanel").scrollIntoView({
+    behavior: "smooth",
+    block: "start"
+  });
+}
+
+function drawChart(list) {
+  const area = document.getElementById("chartArea");
+  const valid = list.map(item => ({
+    time: item.time,
+    value: Number(String(item.value).replace(/,/g, ""))
+  })).filter(item => Number.isFinite(item.value));
+
+  if (valid.length < 2) {
+    area.innerHTML = '<div class="notice">그래프를 표시할 데이터가 부족합니다.</div>';
+    return;
+  }
+
+  const points = valid.slice(-60);
+  const values = points.map(p => p.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+
+  const coords = points.map((p, i) => {
+    const x = 5 + i * 390 / (points.length - 1);
+    const y = 190 - ((p.value - min) / range) * 165;
+    return `${x},${y}`;
+  }).join(" ");
+
+  area.innerHTML = `
+    <svg viewBox="0 0 400 210" preserveAspectRatio="none">
+      <line x1="5" y1="190" x2="395" y2="190" stroke="#40505d"/>
+      <polyline class="chart-line" points="${coords}"/>
+    </svg>
+    <div class="chart-labels">
+      <span>${points[0].time}</span>
+      <span>${points[points.length - 1].time}</span>
+    </div>
+  `;
+}
+
+function drawDataList(list) {
+  const area = document.getElementById("dataList");
+  const recent = [...list].sort((a, b) =>
+    String(b.time).localeCompare(String(a.time))
+  ).slice(0, 10);
+
+  area.innerHTML = recent.map(item => `
+    <div class="data-row">
+      <span>${item.time}</span>
+      <strong>${item.value} ${item.unit || ""}</strong>
+    </div>
+  `).join("");
+}
+
+function closeDetail() {
+  document.getElementById("detailPanel").style.display = "none";
+}
+
+loadData();
+</script>
 </body>
 </html>
