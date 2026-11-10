@@ -4,14 +4,14 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 API_KEY = os.environ.get("ECOS_API_KEY")
-
-if not API_KEY:
-    print("오류: ECOS_API_KEY Secret을 찾을 수 없습니다.")
-    sys.exit(1)
-
 BASE_URL = "https://ecos.bok.or.kr/api/"
+
+
+class EcosError(Exception):
+    pass
 
 
 def ecos_request(service, *parts):
@@ -26,23 +26,36 @@ def ecos_request(service, *parts):
     try:
         with urlopen(request, timeout=30) as response:
             result = json.loads(response.read().decode("utf-8"))
-    except Exception:
-        raise RuntimeError("ECOS API 접속 또는 응답 처리에 실패했습니다.")
 
-    service_data = result.get(service, {})
+    except HTTPError as e:
+        raise EcosError(f"HTTP 오류: {e.code}") from None
+    except URLError:
+        raise EcosError("ECOS 서버에 연결하지 못했습니다.") from None
+    except Exception:
+        raise EcosError("ECOS 응답을 읽지 못했습니다.") from None
+
     if "RESULT" in result:
-        raise RuntimeError("ECOS에서 오류 응답을 받았습니다.")
+        error = result["RESULT"]
+        code = error.get("CODE", "알 수 없음")
+        message = error.get("MESSAGE", "상세 메시지 없음")
+        raise EcosError(f"ECOS 오류 {code}: {message}")
+
+    service_data = result.get(service)
 
     if not isinstance(service_data, dict):
-        raise RuntimeError("ECOS 응답 형식이 예상과 다릅니다.")
+        raise EcosError(f"{service}: 예상하지 못한 응답 형식")
 
     return service_data.get("row", [])
 
 
 def main():
-    print("ECOS 통계 목록을 확인하고 있습니다.")
+    if not API_KEY:
+        raise EcosError("ECOS_API_KEY Secret을 찾을 수 없습니다.")
+
+    print("1. ECOS 통계 목록을 확인합니다.")
 
     tables = ecos_request("StatisticTableList", 1, 1000)
+    print("통계표 수:", len(tables))
 
     candidates = []
 
@@ -54,11 +67,15 @@ def main():
             continue
 
         if "환율" in table_name or "기준금리" in table_name:
-            print("관련 통계표 발견:", table_name)
+            print("통계표 발견:", table_name)
+
+            print("세부 항목을 확인합니다:", table_name)
 
             items = ecos_request(
                 "StatisticItemList", 1, 1000, table_code
             )
+
+            print("세부 항목 수:", len(items))
 
             for item in items:
                 item_name = item.get("ITEM_NAME", "")
@@ -104,12 +121,15 @@ def main():
 
     print("통계 항목 확인 완료.")
     print("후보 항목 수:", len(candidates))
-    print("결과 파일: data/economy_catalog.json")
+    print("결과 파일:", str(output_path))
 
 
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
-        print("수집 중 오류가 발생했습니다. 인증키와 ECOS 응답을 확인해 주세요.")
+    except EcosError as e:
+        print("ECOS 수집 오류:", str(e))
+        sys.exit(1)
+    except Exception as e:
+        print("예상하지 못한 프로그램 오류:", type(e).__name__)
         sys.exit(1)
